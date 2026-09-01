@@ -5,6 +5,7 @@ const authRoutes = require('./routes/auth.routes')
 const userRoutes = require('./routes/user.routes')
 const projectRoutes = require('./routes/project.routes')
 const documentRoutes = require('./routes/document.routes')
+const { tokenize } = require('./rag/tokenizer')
 
 
 const app = express()
@@ -33,5 +34,13 @@ app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/projects", projectRoutes);
 app.use("/api/documents", documentRoutes);
+
+// const text =
+//   "The application uses JWT authentication.";
+
+// const tokens = tokenize(text);
+
+// console.log(tokens);
+// console.log(tokens.length);
 
 module.exports = app

@@ -2,6 +2,13 @@ const fs = require("fs/promises")
 const Document = require("../models/Document.model.js")
 const Project = require("../models/Project.model.js")
 const extractTextFromFile = require("../services/document.service.js");
+const cleanText = require("../rag/cleaner.js");
+const createChunks = require("../rag/chunker.js");
+const DocumentChunk = require("../models/DocumentChunk.model.js");
+const { generateEmbeddings } = require("../services/embedding.service.js");
+const { generateEmbedding } = require("../services/embedding.service.js");
+const  searchSimilarChunks  = require("../rag/retriever.js");
+
 
 const uploadDocument = async (req, res) => {
   try {
@@ -58,6 +65,68 @@ const uploadDocument = async (req, res) => {
         req.file.mimetype
       );
 
+      const cleanedText = cleanText(
+        extracted.text
+      );
+
+      const chunks = createChunks(
+        cleanedText
+      );
+
+      const chunkTexts = chunks.map(
+        (chunk) => chunk.content
+      );
+
+      const embeddings = await generateEmbeddings(
+        chunkTexts
+      );
+
+      const chunkDocuments = chunks.map(
+        (chunk, index) => ({
+          documentId: document._id,
+
+          projectId: document.projectId,
+
+          userId: document.userId,
+
+          content: chunk.content,
+
+          embedding: embeddings[index],
+
+          chunkIndex: index,
+
+          tokenCount: chunk.tokenCount,
+
+          startToken: chunk.startToken,
+
+          endToken: chunk.endToken,
+
+          pageNumber: null,
+
+          metadata: {
+            fileType: document.fileType,
+            originalName: document.originalName,
+          },
+        })
+      );
+
+      await DocumentChunk.deleteMany({
+        documentId: document._id,
+      });
+
+      if (chunkDocuments.length > 0) {
+        await DocumentChunk.insertMany(
+          chunkDocuments
+        );
+      }
+
+      document.totalChunks =
+        chunkDocuments.length;
+
+      document.status = "processed";
+
+      await document.save();
+
       document.status = "processed";
 
       document.totalPages = extracted.totalPages;
@@ -106,4 +175,54 @@ const uploadDocument = async (req, res) => {
 };
 
 
-module.exports = uploadDocument
+const testSemanticSearch = async (
+  req,
+  res
+) => {
+  try {
+    const {
+      projectId,
+      question,
+    } = req.body;
+
+    if (!projectId || !question) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Project ID and question are required",
+      });
+    }
+
+    const queryEmbedding = await generateEmbedding(question);
+    const results = await searchSimilarChunks({
+      queryEmbedding,
+
+      userId: req.user.userId,
+
+      projectId,
+
+      limit: 5,
+    });
+
+    
+    return res.status(200).json({
+      success: true,
+
+      question,
+
+      results,
+    });
+  } catch (error) {
+    console.error(
+      "Semantic search error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: "Semantic search failed",
+    });
+  }
+};
+
+module.exports = { uploadDocument, testSemanticSearch }
